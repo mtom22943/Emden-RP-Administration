@@ -55,7 +55,7 @@ async def on_ready():
 @client.event
 async def on_member_join(member: discord.Member):
     print(f"JOIN WORKS: {member}")
-    channel = discord.utils.get(member.guild.text_channels, name="welcome")
+    channel = discord.utils.get(member.guild.text_channels, name="👋・𝕎𝕚𝕝𝕝𝕜𝕠𝕞𝕞𝕖𝕟")
 
     if channel:
         embed = discord.Embed(
