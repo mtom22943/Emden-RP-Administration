@@ -59,8 +59,12 @@ async def on_member_join(member: discord.Member):
 
     if channel:
         embed = discord.Embed(
-            title="👋 Willkommen!",
-            description=f"Willkommen {member.mention} auf dem Server!",
+            title="👋 Willkommen aufn den Bau Server!",
+            description=f"Willkommen {member.mention} auf dem Server!
+
+📜 Bitte beachte die Regeln und behandle alle Spieler respektvoll.
+
+🏗️ Viel Spaß auf den Server! ✨",
             color=discord.Color.green()
         )
         await channel.send(embed=embed)
