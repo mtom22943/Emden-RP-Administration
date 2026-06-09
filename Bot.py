@@ -1,5 +1,20 @@
 import discord
 from discord import app_commands
+import threading
+import os
+from http.server import HTTPServer, BaseHTTPRequestHandler
+
+class DummyServer(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header("Content-type", "text/html")
+        self.end_headers()
+        self.wfile.write(b"Bot is running!")
+
+def run_webserver():
+    port = int(os.environ.get("PORT", 8080))
+    server = HTTPServer(("0.0.0.0", port), DummyServer)
+    server.serve_forever()
 
 TOKEN = None
 try:
@@ -8,7 +23,7 @@ try:
             if line.startswith("DISCORD_TOKEN="):
                 TOKEN = line.strip().split("=", 1)[1]
 except FileNotFoundError:
-    print("Fehler: Die Datei .env wurde nicht gefunden!")
+    TOKEN = os.environ.get("DISCORD_TOKEN")
 
 class MyClient(discord.Client):
     def __init__(self):
@@ -102,6 +117,7 @@ async def clear(interaction: discord.Interaction, anzahl: int):
 
 
 if TOKEN:
+    threading.Thread(target=run_webserver, daemon=True).start()
     client.run(TOKEN)
 else:
-    print("Tom du hast dein token nicht eingetragen") 
+    print("Tom du hast dein token nicht eingetragen")
