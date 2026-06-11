@@ -133,7 +133,7 @@ import aiosqlite
 from discord.ext import commands
 from discord import app_commands
 
-DB = "tickets.db"
+bot = commands.Bot(command_prefix="!", intents=intents)
 
 
 # ---------------- DATABASE ----------------
@@ -226,7 +226,7 @@ class TicketButtons(discord.ui.View):
             if log_channel:
                 embed = discord.Embed(
                     title="Ticket geschlossen",
-                    description=f"Ticket: {interaction.channel.name}\nGeschlossen von: {interaction.user.mention}",
+                    description=f"{interaction.channel.name}\nVon: {interaction.user.mention}",
                     color=discord.Color.red()
                 )
                 await log_channel.send(embed=embed)
@@ -240,7 +240,7 @@ class TicketSelect(discord.ui.Select):
         options = [
             discord.SelectOption(label="Allgemeine Frage", emoji="❓"),
             discord.SelectOption(label="Beschwerde", emoji="🚨"),
-            discord.SelectOption(label="Kooperationsanfrage", emoji="🤝")
+            discord.SelectOption(label="Kooperation", emoji="🤝")
         ]
 
         super().__init__(
@@ -264,6 +264,7 @@ class TicketSelect(discord.ui.Select):
                 ephemeral=True
             )
 
+        # check existing ticket
         for channel in interaction.guild.channels:
             if isinstance(channel, discord.TextChannel):
                 if channel.topic == f"OWNER:{interaction.user.id}":
@@ -275,11 +276,13 @@ class TicketSelect(discord.ui.Select):
         ticket_number = await next_ticket(interaction.guild.id)
         ticket_type = self.values[0]
 
-        role_id = {
+        role_map = {
             "Allgemeine Frage": settings[3],
             "Beschwerde": settings[4],
-            "Kooperationsanfrage": settings[5]
-        }[ticket_type]
+            "Kooperation": settings[5]
+        }
+
+        role_id = role_map.get(ticket_type)
 
         overwrites = {
             interaction.guild.default_role: discord.PermissionOverwrite(view_channel=False),
@@ -310,7 +313,7 @@ class TicketSelect(discord.ui.Select):
 
         embed = discord.Embed(
             title=f"🎫 Ticket #{ticket_number:04d}",
-            description=f"**Typ:** {ticket_type}\n**Ersteller:** {interaction.user.mention}",
+            description=f"Typ: {ticket_type}\nUser: {interaction.user.mention}",
             color=discord.Color.blurple()
         )
 
@@ -331,46 +334,52 @@ class TicketView(discord.ui.View):
         self.add_item(TicketSelect())
 
 
-# ---------------- COG ----------------
+# ---------------- COMMANDS ----------------
 
-class TicketSystem(commands.Cog):
-    def __init__(self, bot: commands.Bot):
-        self.bot = bot
+@bot.tree.command(name="setup")
+@app_commands.default_permissions(administrator=True)
+async def setup(interaction: discord.Interaction,
+                category: discord.CategoryChannel,
+                logs: discord.TextChannel):
 
-    @commands.Cog.listener()
-    async def on_ready(self):
-        await db_init()
-        self.bot.add_view(TicketView())
-        self.bot.add_view(TicketButtons())
+    async with aiosqlite.connect(DB) as db:
+        await db.execute("""
+        INSERT OR REPLACE INTO settings(guild_id, category_id, log_channel_id)
+        VALUES(?,?,?)
+        """, (interaction.guild.id, category.id, logs.id))
+        await db.commit()
 
-    @app_commands.command(name="setup")
-    @app_commands.default_permissions(administrator=True)
-    async def setup(self, interaction: discord.Interaction,
-                    category: discord.CategoryChannel,
-                    logs: discord.TextChannel):
-
-        async with aiosqlite.connect(DB) as db:
-            await db.execute("""
-            INSERT OR REPLACE INTO settings(guild_id, category_id, log_channel_id)
-            VALUES(?,?,?)
-            """, (interaction.guild.id, category.id, logs.id))
-            await db.commit()
-
-        await interaction.response.send_message("Setup gespeichert.", ephemeral=True)
-
-    @app_commands.command(name="ticketpanel")
-    @app_commands.default_permissions(administrator=True)
-    async def ticketpanel(self, interaction: discord.Interaction):
-
-        embed = discord.Embed(
-            title="🎫 Ticket System",
-            description="❓ Frage\n🚨 Beschwerde\n🤝 Kooperation\n\nWähle unten einen Typ.",
-            color=discord.Color.blurple()
-        )
-
-        await interaction.channel.send(embed=embed, view=TicketView())
-        await interaction.response.send_message("Ticketpanel gesendet.", ephemeral=True)
+    await interaction.response.send_message("Setup gespeichert.", ephemeral=True)
 
 
-async def setup(bot: commands.Bot):
-    await bot.add_cog(TicketSystem(bot))
+@bot.tree.command(name="ticketpanel")
+@app_commands.default_permissions(administrator=True)
+async def ticketpanel(interaction: discord.Interaction):
+
+    embed = discord.Embed(
+        title="🎫 Ticket System",
+        description="❓ Frage\n🚨 Beschwerde\n🤝 Kooperation\n\nWähle unten aus.",
+        color=discord.Color.blurple()
+    )
+
+    await interaction.channel.send(embed=embed, view=TicketView())
+
+    await interaction.response.send_message("Panel gesendet.", ephemeral=True)
+
+
+# ---------------- STARTUP ----------------
+
+@bot.event
+async def on_ready():
+    await db_init()
+
+    bot.add_view(TicketView())
+    bot.add_view(TicketButtons())
+
+    try:
+        synced = await bot.tree.sync()
+        print(f"Synced {len(synced)} commands")
+    except Exception as e:
+        print(e)
+
+    print(f"Logged in as {bot.user}")
