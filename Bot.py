@@ -57,15 +57,14 @@ async def on_member_join(member: discord.Member):
     print(f"JOIN WORKS: {member}")
     channel = discord.utils.get(member.guild.text_channels, name="👋・𝕎𝕚𝕝𝕝𝕜𝕠𝕞𝕞𝕖𝕟")
 
-    if channel:
-embed = discord.Embed(
-    title="Willkommen",
-    color=discord.Color.green(),
-    description=f"""..."""
-)
-            color=discord.Color.green()
-        )
-        await channel.send(embed=embed)
+if channel:
+    embed = discord.Embed(
+        title="Willkommen",
+        description=f"""Willkommen {member.mention} auf dem Server!
+Bitte lies die Regeln."""
+    )
+
+    await channel.send(embed=embed)
 
 
 async def log(guild, title, desc, color):
