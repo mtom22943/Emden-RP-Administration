@@ -1,12 +1,13 @@
 import discord
-from discord.ext import commands
 from discord import app_commands
+from discord.ext import commands
 import aiosqlite
 import threading
 import os
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
-# ---------------- WEB SERVER (Render keep-alive) ----------------
+
+# ---------------- WEB SERVER ----------------
 
 class DummyServer(BaseHTTPRequestHandler):
     def do_GET(self):
@@ -21,7 +22,7 @@ def run_webserver():
     server.serve_forever()
 
 
-# ---------------- BOT SETUP ----------------
+# ---------------- BOT ----------------
 
 TOKEN = os.environ.get("DISCORD_TOKEN")
 
@@ -48,7 +49,6 @@ async def db_init():
             kooperation_role INTEGER
         )
         """)
-
         await db.execute("""
         CREATE TABLE IF NOT EXISTS counters(
             guild_id INTEGER PRIMARY KEY,
@@ -83,33 +83,21 @@ async def next_ticket(guild_id: int):
         return number
 
 
-# ---------------- WELCOME EVENT ----------------
+# ---------------- MODERATION ----------------
 
-@bot.event
-async def on_member_join(member: discord.Member):
-    print(f"JOIN: {member}")
-
-    channel = discord.utils.get(member.guild.text_channels, name="👋・𝕎𝕚𝕝𝕝𝕜𝕠𝕞𝕞𝕖𝕟")
-
-    if channel:
-        embed = discord.Embed(
-            title="Willkommen",
-            description=f"Willkommen {member.mention} auf dem Server!\nBitte lies die Regeln.",
-            color=discord.Color.green()
-        )
-        await channel.send(embed=embed)
+def darf_moderieren(member: discord.Member):
+    return any(role.name in ["Geschäftsführer", "Tom"] for role in member.roles)
 
 
-# ---------------- LOG FUNCTION ----------------
+# ---------------- LOG ----------------
 
 async def log(guild, title, desc, color):
     channel = discord.utils.get(guild.text_channels, name="logs")
     if channel:
-        embed = discord.Embed(title=title, description=desc, color=color)
-        await channel.send(embed=embed)
+        await channel.send(embed=discord.Embed(title=title, description=desc, color=color))
 
 
-# ---------------- TICKET UI ----------------
+# ---------------- TICKET SYSTEM ----------------
 
 class TicketButtons(discord.ui.View):
     def __init__(self):
@@ -126,7 +114,7 @@ class TicketButtons(discord.ui.View):
         await interaction.response.send_message(
             embed=discord.Embed(
                 title="Ticket übernommen",
-                description=f"{interaction.user.mention} bearbeitet das Ticket.",
+                description=f"{interaction.user.mention} bearbeitet das Ticket",
                 color=discord.Color.green()
             )
         )
@@ -163,7 +151,6 @@ class TicketSelect(discord.ui.Select):
             discord.SelectOption(label="Beschwerde", emoji="🚨"),
             discord.SelectOption(label="Kooperation", emoji="🤝")
         ]
-
         super().__init__(placeholder="Ticket auswählen", options=options)
 
     async def callback(self, interaction: discord.Interaction):
@@ -173,7 +160,7 @@ class TicketSelect(discord.ui.Select):
             settings = await cur.fetchone()
 
         if not settings:
-            return await interaction.response.send_message("Bitte /setup ausführen", ephemeral=True)
+            return await interaction.response.send_message("Bitte /setup machen", ephemeral=True)
 
         for channel in interaction.guild.channels:
             if isinstance(channel, discord.TextChannel):
@@ -210,13 +197,14 @@ class TicketSelect(discord.ui.Select):
             topic=f"OWNER:{interaction.user.id}"
         )
 
-        embed = discord.Embed(
-            title=f"Ticket #{ticket_number:04d}",
-            description=f"Typ: {ticket_type}\nUser: {interaction.user.mention}",
-            color=discord.Color.blurple()
+        await channel.send(
+            embed=discord.Embed(
+                title=f"Ticket #{ticket_number:04d}",
+                description=f"Typ: {ticket_type}\nUser: {interaction.user.mention}",
+                color=discord.Color.blurple()
+            ),
+            view=TicketButtons()
         )
-
-        await channel.send(embed=embed, view=TicketButtons())
 
         await interaction.response.send_message(f"Ticket erstellt: {channel.mention}", ephemeral=True)
 
@@ -259,12 +247,47 @@ async def ticketpanel(interaction: discord.Interaction):
     await interaction.response.send_message("Panel gesendet", ephemeral=True)
 
 
+@bot.tree.command(name="ban")
+async def ban(interaction: discord.Interaction, member: discord.Member, grund: str = "Kein Grund"):
+
+    if not darf_moderieren(interaction.user):
+        return await interaction.response.send_message("❌ Keine Rechte", ephemeral=True)
+
+    await member.ban(reason=grund)
+
+    await interaction.response.send_message(
+        embed=discord.Embed(title="Gebannt", description=f"{member} gebannt\nGrund: {grund}", color=discord.Color.red())
+    )
+
+
+@bot.tree.command(name="kick")
+async def kick(interaction: discord.Interaction, member: discord.Member, grund: str = "Kein Grund"):
+
+    if not darf_moderieren(interaction.user):
+        return await interaction.response.send_message("❌ Keine Rechte", ephemeral=True)
+
+    await member.kick(reason=grund)
+
+    await interaction.response.send_message(
+        embed=discord.Embed(title="Gekickt", description=f"{member} gekickt\nGrund: {grund}", color=discord.Color.orange())
+    )
+
+
+@bot.tree.command(name="clear")
+async def clear(interaction: discord.Interaction, anzahl: int):
+
+    if not darf_moderieren(interaction.user):
+        return await interaction.response.send_message("❌ Keine Rechte", ephemeral=True)
+
+    await interaction.response.send_message(f"Lösche {anzahl}", ephemeral=True)
+    await interaction.channel.purge(limit=anzahl)
+
+
 # ---------------- START ----------------
 
 @bot.event
 async def on_ready():
     await db_init()
-
     bot.add_view(TicketView())
     bot.add_view(TicketButtons())
 
@@ -281,4 +304,4 @@ if TOKEN:
     threading.Thread(target=run_webserver, daemon=True).start()
     bot.run(TOKEN)
 else:
-    print("Kein Token gesetzt!")
+    print("Kein Token")
